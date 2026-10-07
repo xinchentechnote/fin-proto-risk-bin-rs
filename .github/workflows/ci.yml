@@ -40,9 +40,21 @@ jobs:
           cd /tmp/fin-protoc && go build -o /tmp/bin/fin-protoc ./cmd
       - name: Regenerate src from DSL
         run: |
-          /tmp/bin/fin-protoc -f proto/risk_v0.1.0.pdsl -r src/
-          cargo fix --allow-dirty --allow-staged --all-targets
-          cargo fmt
+          if ! out=$(/tmp/bin/fin-protoc -f proto/risk_v0.1.0.pdsl -r src/ 2>&1); then
+            echo "$out"
+            echo "$out" | head -5 | sed 's/^/::error::fin-protoc: /'
+            exit 1
+          fi
+          if ! out=$(cargo fix --allow-dirty --allow-staged --all-targets 2>&1); then
+            echo "$out" | tail -40
+            echo "$out" | grep -E "^error" | head -5 | sed 's/^/::error::cargo-fix: /'
+            exit 1
+          fi
+          if ! out=$(cargo fmt 2>&1); then
+            echo "$out"
+            echo "$out" | head -5 | sed 's/^/::error::cargo-fmt: /'
+            exit 1
+          fi
       - name: Fail if generated code drifted
         run: |
           if ! git diff --exit-code -- src/; then
