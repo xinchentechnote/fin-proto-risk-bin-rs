@@ -1,7 +1,7 @@
 # Makefile for fin-protoc project
 
 # Variables
-PROTO_DSL := proto/risk_v0.1.0.pdsl
+PROTO_DSL := proto/risk_v0.2.0.pdsl
 OUTPUT_DIR := src/
 BIN_DIR := ~/workspace/fin-protoc/bin/
 

@@ -3,40 +3,43 @@ use binary_codec::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct OrderConfirm {
+pub struct CancelReq {
     pub req_id: u64,
     pub channel_id: u16,
     pub adapter: u8,
     pub account: String,
     pub cl_ord_id: String,
-    pub order_id: String,
-    pub ord_status: u8,
-    pub ts_ns: u64,
+    pub orig_cl_ord_id: String,
+    pub security_id: String,
+    pub side: u8,
+    pub ts_recv_ns: u64,
     pub raw_ref: u64,
 }
 
-impl BinaryCodec for OrderConfirm {
+impl BinaryCodec for CancelReq {
     fn encode(&self, buf: &mut BytesMut) {
         buf.put_u64(self.req_id);
         buf.put_u16(self.channel_id);
         buf.put_u8(self.adapter);
         put_char_array(buf, &self.account, 16);
         put_char_array(buf, &self.cl_ord_id, 16);
-        put_char_array(buf, &self.order_id, 16);
-        buf.put_u8(self.ord_status);
-        buf.put_u64(self.ts_ns);
+        put_char_array(buf, &self.orig_cl_ord_id, 16);
+        put_char_array(buf, &self.security_id, 12);
+        buf.put_u8(self.side);
+        buf.put_u64(self.ts_recv_ns);
         buf.put_u64(self.raw_ref);
     }
 
-    fn decode(buf: &mut Bytes) -> Option<OrderConfirm> {
+    fn decode(buf: &mut Bytes) -> Option<CancelReq> {
         let req_id = buf.get_u64();
         let channel_id = buf.get_u16();
         let adapter = buf.get_u8();
         let account = get_char_array(buf, 16)?;
         let cl_ord_id = get_char_array(buf, 16)?;
-        let order_id = get_char_array(buf, 16)?;
-        let ord_status = buf.get_u8();
-        let ts_ns = buf.get_u64();
+        let orig_cl_ord_id = get_char_array(buf, 16)?;
+        let security_id = get_char_array(buf, 12)?;
+        let side = buf.get_u8();
+        let ts_recv_ns = buf.get_u64();
         let raw_ref = buf.get_u64();
         Some(Self {
             req_id,
@@ -44,30 +47,32 @@ impl BinaryCodec for OrderConfirm {
             adapter,
             account,
             cl_ord_id,
-            order_id,
-            ord_status,
-            ts_ns,
+            orig_cl_ord_id,
+            security_id,
+            side,
+            ts_recv_ns,
             raw_ref,
         })
     }
 }
 
 #[cfg(test)]
-mod order_confirm_tests {
+mod cancel_req_tests {
     use super::*;
     use bytes::BytesMut;
 
     #[test]
-    fn test_order_confirm_codec() {
-        let original = OrderConfirm {
+    fn test_cancel_req_codec() {
+        let original = CancelReq {
             req_id: 123456789,
             channel_id: 1234,
             adapter: 42,
             account: vec!['a'; 16].into_iter().collect::<String>(),
             cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
-            order_id: vec!['a'; 16].into_iter().collect::<String>(),
-            ord_status: 42,
-            ts_ns: 123456789,
+            orig_cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
+            security_id: vec!['a'; 12].into_iter().collect::<String>(),
+            side: 42,
+            ts_recv_ns: 123456789,
             raw_ref: 123456789,
         };
 
@@ -75,7 +80,7 @@ mod order_confirm_tests {
         original.encode(&mut buf);
         let mut bytes = buf.freeze();
 
-        let decoded = OrderConfirm::decode(&mut bytes).unwrap();
+        let decoded = CancelReq::decode(&mut bytes).unwrap();
         assert_eq!(original, decoded);
     }
 }

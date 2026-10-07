@@ -4,34 +4,54 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CancelReject {
-    pub unique_order_id: String,
-    pub unique_orig_order_id: String,
+    pub req_id: u64,
+    pub channel_id: u16,
+    pub adapter: u8,
+    pub account: String,
     pub cl_ord_id: String,
     pub orig_cl_ord_id: String,
-    pub cxl_rej_reason: u32,
+    pub reason_code: u16,
+    pub text: String,
+    pub ts_ns: u64,
+    pub raw_ref: u64,
 }
 
 impl BinaryCodec for CancelReject {
     fn encode(&self, buf: &mut BytesMut) {
-        put_string::<u32>(buf, &self.unique_order_id);
-        put_string::<u32>(buf, &self.unique_orig_order_id);
-        put_string::<u32>(buf, &self.cl_ord_id);
-        put_string::<u32>(buf, &self.orig_cl_ord_id);
-        buf.put_u32(self.cxl_rej_reason);
+        buf.put_u64(self.req_id);
+        buf.put_u16(self.channel_id);
+        buf.put_u8(self.adapter);
+        put_char_array(buf, &self.account, 16);
+        put_char_array(buf, &self.cl_ord_id, 16);
+        put_char_array(buf, &self.orig_cl_ord_id, 16);
+        buf.put_u16(self.reason_code);
+        put_char_array(buf, &self.text, 32);
+        buf.put_u64(self.ts_ns);
+        buf.put_u64(self.raw_ref);
     }
 
     fn decode(buf: &mut Bytes) -> Option<CancelReject> {
-        let unique_order_id = get_string::<u32>(buf)?;
-        let unique_orig_order_id = get_string::<u32>(buf)?;
-        let cl_ord_id = get_string::<u32>(buf)?;
-        let orig_cl_ord_id = get_string::<u32>(buf)?;
-        let cxl_rej_reason = buf.get_u32();
+        let req_id = buf.get_u64();
+        let channel_id = buf.get_u16();
+        let adapter = buf.get_u8();
+        let account = get_char_array(buf, 16)?;
+        let cl_ord_id = get_char_array(buf, 16)?;
+        let orig_cl_ord_id = get_char_array(buf, 16)?;
+        let reason_code = buf.get_u16();
+        let text = get_char_array(buf, 32)?;
+        let ts_ns = buf.get_u64();
+        let raw_ref = buf.get_u64();
         Some(Self {
-            unique_order_id,
-            unique_orig_order_id,
+            req_id,
+            channel_id,
+            adapter,
+            account,
             cl_ord_id,
             orig_cl_ord_id,
-            cxl_rej_reason,
+            reason_code,
+            text,
+            ts_ns,
+            raw_ref,
         })
     }
 }
@@ -44,11 +64,16 @@ mod cancel_reject_tests {
     #[test]
     fn test_cancel_reject_codec() {
         let original = CancelReject {
-            unique_order_id: "example".to_string(),
-            unique_orig_order_id: "example".to_string(),
-            cl_ord_id: "example".to_string(),
-            orig_cl_ord_id: "example".to_string(),
-            cxl_rej_reason: 123456,
+            req_id: 123456789,
+            channel_id: 1234,
+            adapter: 42,
+            account: vec!['a'; 16].into_iter().collect::<String>(),
+            cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
+            orig_cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
+            reason_code: 1234,
+            text: vec!['a'; 32].into_iter().collect::<String>(),
+            ts_ns: 123456789,
+            raw_ref: 123456789,
         };
 
         let mut buf = BytesMut::new();

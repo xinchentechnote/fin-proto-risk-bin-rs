@@ -4,26 +4,42 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiskResult {
-    pub unique_order_id: String,
-    pub risk_status: u8,
-    pub risk_reason: String,
+    pub req_id: u64,
+    pub decision: u8,
+    pub code: u16,
+    pub rule_id: u16,
+    pub ts_recv_ns: u64,
+    pub ts_engine_ns: u64,
+    pub text: String,
 }
 
 impl BinaryCodec for RiskResult {
     fn encode(&self, buf: &mut BytesMut) {
-        put_string::<u32>(buf, &self.unique_order_id);
-        buf.put_u8(self.risk_status);
-        put_string::<u32>(buf, &self.risk_reason);
+        buf.put_u64(self.req_id);
+        buf.put_u8(self.decision);
+        buf.put_u16(self.code);
+        buf.put_u16(self.rule_id);
+        buf.put_u64(self.ts_recv_ns);
+        buf.put_u64(self.ts_engine_ns);
+        put_char_array(buf, &self.text, 48);
     }
 
     fn decode(buf: &mut Bytes) -> Option<RiskResult> {
-        let unique_order_id = get_string::<u32>(buf)?;
-        let risk_status = buf.get_u8();
-        let risk_reason = get_string::<u32>(buf)?;
+        let req_id = buf.get_u64();
+        let decision = buf.get_u8();
+        let code = buf.get_u16();
+        let rule_id = buf.get_u16();
+        let ts_recv_ns = buf.get_u64();
+        let ts_engine_ns = buf.get_u64();
+        let text = get_char_array(buf, 48)?;
         Some(Self {
-            unique_order_id,
-            risk_status,
-            risk_reason,
+            req_id,
+            decision,
+            code,
+            rule_id,
+            ts_recv_ns,
+            ts_engine_ns,
+            text,
         })
     }
 }
@@ -36,9 +52,13 @@ mod risk_result_tests {
     #[test]
     fn test_risk_result_codec() {
         let original = RiskResult {
-            unique_order_id: "example".to_string(),
-            risk_status: 42,
-            risk_reason: "example".to_string(),
+            req_id: 123456789,
+            decision: 42,
+            code: 1234,
+            rule_id: 1234,
+            ts_recv_ns: 123456789,
+            ts_engine_ns: 123456789,
+            text: vec!['a'; 48].into_iter().collect::<String>(),
         };
 
         let mut buf = BytesMut::new();
