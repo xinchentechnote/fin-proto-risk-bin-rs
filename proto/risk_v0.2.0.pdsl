@@ -1,6 +1,7 @@
 // RBP（Risk Binary Protocol）风控二进制协议 v0.2.0
-// RGW 网关 ↔ 风控引擎 点对点协议（对齐 omni-rt-risk/docs/03-风控二进制协议RBP设计.md v0.3）
+// RGW 网关 ↔ 风控引擎 点对点内部协议（对齐 omni-rt-risk/docs/03-风控二进制协议RBP设计.md v0.3）
 // 帧格式：帧头（定长 32B，大端）+ 帧体（msg_type 分发）。
+// 内部协议不含登录/心跳/会话管理消息，会话由传输层（TCP/SHM）承担。
 // Checksum = 帧体字节累加 & 0xFF，由应用层计算/校验（flags.NO_CHECKSUM 时置 0 跳过），
 // 故此处保持普通字段传递，不使用 @calculatedFrom 自动填充。
 options {
@@ -22,10 +23,6 @@ root packet RbpBinary {
     uint32 BodyLen `帧体长度`,
     uint32 Checksum `帧体字节累加 & 0xFF（NO_CHECKSUM 时置 0）`,
     match MsgType as Body {
-        1 : Logon,
-        2 : LogonAck,
-        3 : Heartbeat,
-        6 : SessionReject,
         16 : NewOrderReq,
         17 : CancelReq,
         18 : OrderConfirm,
@@ -36,37 +33,6 @@ root packet RbpBinary {
         48 : Instruction,
         49 : InstrAck,
     },
-}
-
-// ============================== 会话层 ==============================
-
-// 登录请求
-packet Logon {
-    char[16] GatewayID `网关标识`,
-    uint8 Role `角色 1=Front 2=Agent 3=DB`,
-    uint16 ProtoVer `协议版本`,
-    uint16 HeartbeatMs `心跳间隔（毫秒）`,
-    uint32 Caps `能力位 bit0=支持 SHM 传输`,
-}
-
-// 登录应答
-packet LogonAck {
-    char[16] EngineID `引擎标识`,
-    uint64 SessionID `会话号`,
-    uint16 HeartbeatMs `心跳间隔（毫秒）`,
-    uint8 Accept `0=接受`,
-    char[32] Reason `拒绝原因（仅拒绝时有效）`,
-}
-
-// 心跳（捎带累积确认）
-packet Heartbeat {
-    uint64 LastRecvSeq `捎带对端已收序号，兼作累积确认`,
-}
-
-// 会话层拒绝
-packet SessionReject {
-    uint16 ErrCode `1=版本不匹配 2=重复Logon 3=序号无法补拉 4=认证失败`,
-    char[48] Text `错误说明`,
 }
 
 // ======================= 事前校验流（同步） =======================

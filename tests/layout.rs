@@ -5,10 +5,9 @@ use binary_codec::BinaryCodec;
 use bytes::BytesMut;
 use risk_binary::rbp_binary::{RbpBinary, RbpBinaryBodyEnum};
 use risk_binary::{
-    cancel_reject::CancelReject, cancel_req::CancelReq, heartbeat::Heartbeat, instr_ack::InstrAck,
-    instruction::Instruction, logon::Logon, logon_ack::LogonAck, new_order_req::NewOrderReq,
-    order_confirm::OrderConfirm, order_reject::OrderReject, risk_result::RiskResult,
-    session_reject::SessionReject, trade_report::TradeReport,
+    cancel_reject::CancelReject, cancel_req::CancelReq, instr_ack::InstrAck,
+    instruction::Instruction, new_order_req::NewOrderReq, order_confirm::OrderConfirm,
+    order_reject::OrderReject, risk_result::RiskResult, trade_report::TradeReport,
 };
 
 fn assert_body_len<M: BinaryCodec>(expect_len: usize, msg: &M, name: &str) {
@@ -35,37 +34,6 @@ fn envelope_len(body: RbpBinaryBodyEnum, msg_type: u32) -> usize {
 
 #[test]
 fn body_sizes_match_design_doc() {
-    assert_body_len(
-        25,
-        &Logon {
-            gateway_id: "gw".into(),
-            role: 1,
-            proto_ver: 1,
-            heartbeat_ms: 1000,
-            caps: 1,
-        },
-        "Logon",
-    );
-    assert_body_len(
-        59,
-        &LogonAck {
-            engine_id: "eng".into(),
-            session_id: 1,
-            heartbeat_ms: 1000,
-            accept: 0,
-            reason: "".into(),
-        },
-        "LogonAck",
-    );
-    assert_body_len(8, &Heartbeat { last_recv_seq: 1 }, "Heartbeat");
-    assert_body_len(
-        50,
-        &SessionReject {
-            err_code: 1,
-            text: "x".into(),
-        },
-        "SessionReject",
-    );
     assert_body_len(
         123,
         &NewOrderReq {
@@ -214,7 +182,11 @@ fn body_sizes_match_design_doc() {
 
 #[test]
 fn envelope_is_32b_header_plus_body() {
-    let heartbeat = RbpBinaryBodyEnum::Heartbeat(Heartbeat { last_recv_seq: 1 });
+    let instr_ack = RbpBinaryBodyEnum::InstrAck(InstrAck {
+        instr_id: 1,
+        result: 0,
+        ts_ns: 0,
+    });
     let new_order_req = RbpBinaryBodyEnum::NewOrderReq(NewOrderReq {
         req_id: 1,
         channel_id: 1,
@@ -234,6 +206,6 @@ fn envelope_is_32b_header_plus_body() {
         ts_recv_ns: 0,
         raw_ref: 0,
     });
-    assert_eq!(envelope_len(heartbeat, 3), 32 + 8);
+    assert_eq!(envelope_len(instr_ack, 49), 32 + 17);
     assert_eq!(envelope_len(new_order_req, 16), 32 + 123);
 }

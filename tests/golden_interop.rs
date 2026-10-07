@@ -1,6 +1,7 @@
 //! 与引擎侧实现（omni-rt-risk/risk-binary）的互通测试：
 //! tests/golden/*.bin 由引擎的 RbpFrame 编码生成（见仓库提交说明），此处用本 crate
 //! 的 fin-protoc 生成代码解码并逐字段断言，再重编码要求字节级一致。
+//! 内部协议不含会话层消息，故无 Logon/Heartbeat 等 golden 帧（引擎侧沿用其自有实现）。
 //! 任何字段顺序/类型/定长/字节序漂移都会在这里暴露。
 
 use binary_codec::BinaryCodec;
@@ -17,61 +18,6 @@ fn roundtrip(name: &str, raw: &'static [u8]) -> RbpBinary {
     decoded.encode(&mut re);
     assert_eq!(re.as_ref(), raw, "{name}: 重编码字节不一致");
     decoded
-}
-
-#[test]
-fn golden_logon() {
-    let m = roundtrip("logon", include_bytes!("golden/01_logon.bin"));
-    assert_eq!(m.msg_type, 1);
-    assert_eq!(m.version, 1);
-    assert_eq!(m.msg_seq, 1);
-    assert_eq!(m.ts_ns, 1_700_000_000_000_000_001);
-    let RbpBinaryBodyEnum::Logon(body) = m.body else {
-        panic!("expect Logon")
-    };
-    assert_eq!(body.gateway_id, "gw-front-01");
-    assert_eq!(body.role, 1);
-    assert_eq!(body.proto_ver, 1);
-    assert_eq!(body.heartbeat_ms, 1000);
-    assert_eq!(body.caps, 0b1);
-}
-
-#[test]
-fn golden_logon_ack() {
-    let m = roundtrip("logon_ack", include_bytes!("golden/02_logon_ack.bin"));
-    assert_eq!(m.msg_type, 2);
-    let RbpBinaryBodyEnum::LogonAck(body) = m.body else {
-        panic!("expect LogonAck")
-    };
-    assert_eq!(body.engine_id, "engine-01");
-    assert_eq!(body.session_id, 42);
-    assert_eq!(body.accept, 0);
-}
-
-#[test]
-fn golden_heartbeat_no_checksum_flag() {
-    let m = roundtrip("heartbeat", include_bytes!("golden/03_heartbeat.bin"));
-    assert_eq!(m.msg_type, 3);
-    assert_eq!(m.flags, 1 << 4, "引擎侧 NO_CHECKSUM 标志应原样透传");
-    assert_eq!(m.checksum, 0, "NO_CHECKSUM 帧校验和为 0");
-    let RbpBinaryBodyEnum::Heartbeat(body) = m.body else {
-        panic!("expect Heartbeat")
-    };
-    assert_eq!(body.last_recv_seq, 99);
-}
-
-#[test]
-fn golden_session_reject() {
-    let m = roundtrip(
-        "session_reject",
-        include_bytes!("golden/04_session_reject.bin"),
-    );
-    assert_eq!(m.msg_type, 6);
-    let RbpBinaryBodyEnum::SessionReject(body) = m.body else {
-        panic!("expect SessionReject")
-    };
-    assert_eq!(body.err_code, 1);
-    assert_eq!(body.text, "version mismatch");
 }
 
 #[test]

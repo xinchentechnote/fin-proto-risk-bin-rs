@@ -5,24 +5,16 @@ use bytes::{Buf, BufMut, Bytes, BytesMut};
 
 use crate::cancel_reject::*;
 use crate::cancel_req::*;
-use crate::heartbeat::*;
 use crate::instr_ack::*;
 use crate::instruction::*;
-use crate::logon::*;
-use crate::logon_ack::*;
 use crate::new_order_req::*;
 use crate::order_confirm::*;
 use crate::order_reject::*;
 use crate::risk_result::*;
-use crate::session_reject::*;
 use crate::trade_report::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum RbpBinaryBodyEnum {
-    Logon(Logon),
-    LogonAck(LogonAck),
-    Heartbeat(Heartbeat),
-    SessionReject(SessionReject),
     NewOrderReq(NewOrderReq),
     CancelReq(CancelReq),
     OrderConfirm(OrderConfirm),
@@ -59,10 +51,6 @@ impl BinaryCodec for RbpBinary {
         buf.put_u32(self.checksum);
         let body_start = buf.len();
         match &self.body {
-            RbpBinaryBodyEnum::Logon(msg) => msg.encode(buf),
-            RbpBinaryBodyEnum::LogonAck(msg) => msg.encode(buf),
-            RbpBinaryBodyEnum::Heartbeat(msg) => msg.encode(buf),
-            RbpBinaryBodyEnum::SessionReject(msg) => msg.encode(buf),
             RbpBinaryBodyEnum::NewOrderReq(msg) => msg.encode(buf),
             RbpBinaryBodyEnum::CancelReq(msg) => msg.encode(buf),
             RbpBinaryBodyEnum::OrderConfirm(msg) => msg.encode(buf),
@@ -89,10 +77,6 @@ impl BinaryCodec for RbpBinary {
         let body_len = buf.get_u32();
         let checksum = buf.get_u32();
         let body = match msg_type {
-            1 => RbpBinaryBodyEnum::Logon(Logon::decode(buf)?),
-            2 => RbpBinaryBodyEnum::LogonAck(LogonAck::decode(buf)?),
-            3 => RbpBinaryBodyEnum::Heartbeat(Heartbeat::decode(buf)?),
-            6 => RbpBinaryBodyEnum::SessionReject(SessionReject::decode(buf)?),
             16 => RbpBinaryBodyEnum::NewOrderReq(NewOrderReq::decode(buf)?),
             17 => RbpBinaryBodyEnum::CancelReq(CancelReq::decode(buf)?),
             18 => RbpBinaryBodyEnum::OrderConfirm(OrderConfirm::decode(buf)?),
@@ -131,13 +115,25 @@ mod rbp_binary_tests {
             ts_ns: 123456789,
             body_len: 0,
             checksum: 123456,
-            msg_type: 1,
-            body: RbpBinaryBodyEnum::Logon(Logon {
-                gateway_id: vec!['a'; 16].into_iter().collect::<String>(),
-                role: 42,
-                proto_ver: 1234,
-                heartbeat_ms: 1234,
-                caps: 123456,
+            msg_type: 16,
+            body: RbpBinaryBodyEnum::NewOrderReq(NewOrderReq {
+                req_id: 123456789,
+                channel_id: 1234,
+                adapter: 42,
+                account: vec!['a'; 16].into_iter().collect::<String>(),
+                account_group: vec!['a'; 16].into_iter().collect::<String>(),
+                cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
+                security_id: vec!['a'; 12].into_iter().collect::<String>(),
+                market: 42,
+                side: 42,
+                price: -123456789,
+                order_qty: -123456789,
+                ord_type: 42,
+                time_in_force: 42,
+                pbu: vec!['a'; 8].into_iter().collect::<String>(),
+                transact_time: 123456789,
+                ts_recv_ns: 123456789,
+                raw_ref: 123456789,
             }),
         };
 
