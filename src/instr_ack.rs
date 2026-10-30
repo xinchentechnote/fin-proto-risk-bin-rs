@@ -10,12 +10,14 @@ pub struct InstrAck {
 }
 
 impl BinaryCodec for InstrAck {
+    #[inline]
     fn encode(&self, buf: &mut BytesMut) {
         buf.put_u64(self.instr_id);
         buf.put_u8(self.result);
         buf.put_u64(self.ts_ns);
     }
 
+    #[inline]
     fn decode(buf: &mut Bytes) -> Option<InstrAck> {
         let instr_id = buf.get_u64();
         let result = buf.get_u8();

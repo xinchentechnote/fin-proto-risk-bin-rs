@@ -39,6 +39,7 @@ pub struct RbpBinary {
 }
 
 impl BinaryCodec for RbpBinary {
+    #[inline]
     fn encode(&self, buf: &mut BytesMut) {
         buf.put_u32(self.msg_type);
         buf.put_u16(self.version);
@@ -68,6 +69,7 @@ impl BinaryCodec for RbpBinary {
         );
     }
 
+    #[inline]
     fn decode(buf: &mut Bytes) -> Option<RbpBinary> {
         let msg_type = buf.get_u32();
         let version = buf.get_u16();
@@ -120,17 +122,17 @@ mod rbp_binary_tests {
                 req_id: 123456789,
                 channel_id: 1234,
                 adapter: 42,
-                account: vec!['a'; 16].into_iter().collect::<String>(),
-                account_group: vec!['a'; 16].into_iter().collect::<String>(),
-                cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
-                security_id: vec!['a'; 12].into_iter().collect::<String>(),
+                account: "a".repeat(16),
+                account_group: "a".repeat(16),
+                cl_ord_id: "a".repeat(16),
+                security_id: "a".repeat(12),
                 market: 42,
                 side: 42,
                 price: -123456789,
                 order_qty: -123456789,
                 ord_type: 42,
                 time_in_force: 42,
-                pbu: vec!['a'; 8].into_iter().collect::<String>(),
+                pbu: "a".repeat(8),
                 transact_time: 123456789,
                 ts_recv_ns: 123456789,
                 raw_ref: 123456789,

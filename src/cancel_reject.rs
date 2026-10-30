@@ -2,6 +2,53 @@
 use binary_codec::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
+#[inline]
+fn put_fixed_string_field(
+    buf: &mut BytesMut,
+    value: &str,
+    fixed_length: usize,
+    pad_byte: u8,
+    pad_left: bool,
+) {
+    let bytes = value.as_bytes();
+    let len = bytes.len().min(fixed_length);
+    let padding_len = fixed_length - len;
+    if pad_left {
+        buf.put_bytes(pad_byte, padding_len);
+    }
+    buf.extend_from_slice(&bytes[..len]);
+    if !pad_left {
+        buf.put_bytes(pad_byte, padding_len);
+    }
+}
+
+#[inline]
+fn get_fixed_string_field(
+    buf: &mut Bytes,
+    fixed_length: usize,
+    pad_byte: u8,
+    pad_left: bool,
+) -> Option<String> {
+    if buf.remaining() < fixed_length {
+        return None;
+    }
+    let bytes = buf.copy_to_bytes(fixed_length);
+    let (start, end) = if pad_left {
+        let start = bytes
+            .iter()
+            .position(|&byte| byte != pad_byte)
+            .unwrap_or(fixed_length);
+        (start, fixed_length)
+    } else {
+        let end = bytes
+            .iter()
+            .rposition(|&byte| byte != pad_byte)
+            .map_or(0, |index| index + 1);
+        (0, end)
+    };
+    String::from_utf8(bytes.slice(start..end).to_vec()).ok()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CancelReject {
     pub req_id: u64,
@@ -17,28 +64,30 @@ pub struct CancelReject {
 }
 
 impl BinaryCodec for CancelReject {
+    #[inline]
     fn encode(&self, buf: &mut BytesMut) {
         buf.put_u64(self.req_id);
         buf.put_u16(self.channel_id);
         buf.put_u8(self.adapter);
-        put_char_array(buf, &self.account, 16);
-        put_char_array(buf, &self.cl_ord_id, 16);
-        put_char_array(buf, &self.orig_cl_ord_id, 16);
+        put_fixed_string_field(buf, &self.account, 16, b' ', false);
+        put_fixed_string_field(buf, &self.cl_ord_id, 16, b' ', false);
+        put_fixed_string_field(buf, &self.orig_cl_ord_id, 16, b' ', false);
         buf.put_u16(self.reason_code);
-        put_char_array(buf, &self.text, 32);
+        put_fixed_string_field(buf, &self.text, 32, b' ', false);
         buf.put_u64(self.ts_ns);
         buf.put_u64(self.raw_ref);
     }
 
+    #[inline]
     fn decode(buf: &mut Bytes) -> Option<CancelReject> {
         let req_id = buf.get_u64();
         let channel_id = buf.get_u16();
         let adapter = buf.get_u8();
-        let account = get_char_array(buf, 16)?;
-        let cl_ord_id = get_char_array(buf, 16)?;
-        let orig_cl_ord_id = get_char_array(buf, 16)?;
+        let account = get_fixed_string_field(buf, 16, b' ', false)?;
+        let cl_ord_id = get_fixed_string_field(buf, 16, b' ', false)?;
+        let orig_cl_ord_id = get_fixed_string_field(buf, 16, b' ', false)?;
         let reason_code = buf.get_u16();
-        let text = get_char_array(buf, 32)?;
+        let text = get_fixed_string_field(buf, 32, b' ', false)?;
         let ts_ns = buf.get_u64();
         let raw_ref = buf.get_u64();
         Some(Self {
@@ -67,11 +116,11 @@ mod cancel_reject_tests {
             req_id: 123456789,
             channel_id: 1234,
             adapter: 42,
-            account: vec!['a'; 16].into_iter().collect::<String>(),
-            cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
-            orig_cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
+            account: "a".repeat(16),
+            cl_ord_id: "a".repeat(16),
+            orig_cl_ord_id: "a".repeat(16),
             reason_code: 1234,
-            text: vec!['a'; 32].into_iter().collect::<String>(),
+            text: "a".repeat(32),
             ts_ns: 123456789,
             raw_ref: 123456789,
         };

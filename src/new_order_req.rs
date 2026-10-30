@@ -2,6 +2,53 @@
 use binary_codec::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
+#[inline]
+fn put_fixed_string_field(
+    buf: &mut BytesMut,
+    value: &str,
+    fixed_length: usize,
+    pad_byte: u8,
+    pad_left: bool,
+) {
+    let bytes = value.as_bytes();
+    let len = bytes.len().min(fixed_length);
+    let padding_len = fixed_length - len;
+    if pad_left {
+        buf.put_bytes(pad_byte, padding_len);
+    }
+    buf.extend_from_slice(&bytes[..len]);
+    if !pad_left {
+        buf.put_bytes(pad_byte, padding_len);
+    }
+}
+
+#[inline]
+fn get_fixed_string_field(
+    buf: &mut Bytes,
+    fixed_length: usize,
+    pad_byte: u8,
+    pad_left: bool,
+) -> Option<String> {
+    if buf.remaining() < fixed_length {
+        return None;
+    }
+    let bytes = buf.copy_to_bytes(fixed_length);
+    let (start, end) = if pad_left {
+        let start = bytes
+            .iter()
+            .position(|&byte| byte != pad_byte)
+            .unwrap_or(fixed_length);
+        (start, fixed_length)
+    } else {
+        let end = bytes
+            .iter()
+            .rposition(|&byte| byte != pad_byte)
+            .map_or(0, |index| index + 1);
+        (0, end)
+    };
+    String::from_utf8(bytes.slice(start..end).to_vec()).ok()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NewOrderReq {
     pub req_id: u64,
@@ -24,41 +71,43 @@ pub struct NewOrderReq {
 }
 
 impl BinaryCodec for NewOrderReq {
+    #[inline]
     fn encode(&self, buf: &mut BytesMut) {
         buf.put_u64(self.req_id);
         buf.put_u16(self.channel_id);
         buf.put_u8(self.adapter);
-        put_char_array(buf, &self.account, 16);
-        put_char_array(buf, &self.account_group, 16);
-        put_char_array(buf, &self.cl_ord_id, 16);
-        put_char_array(buf, &self.security_id, 12);
+        put_fixed_string_field(buf, &self.account, 16, b' ', false);
+        put_fixed_string_field(buf, &self.account_group, 16, b' ', false);
+        put_fixed_string_field(buf, &self.cl_ord_id, 16, b' ', false);
+        put_fixed_string_field(buf, &self.security_id, 12, b' ', false);
         buf.put_u8(self.market);
         buf.put_u8(self.side);
         buf.put_i64(self.price);
         buf.put_i64(self.order_qty);
         buf.put_u8(self.ord_type);
         buf.put_u8(self.time_in_force);
-        put_char_array(buf, &self.pbu, 8);
+        put_fixed_string_field(buf, &self.pbu, 8, b' ', false);
         buf.put_u64(self.transact_time);
         buf.put_u64(self.ts_recv_ns);
         buf.put_u64(self.raw_ref);
     }
 
+    #[inline]
     fn decode(buf: &mut Bytes) -> Option<NewOrderReq> {
         let req_id = buf.get_u64();
         let channel_id = buf.get_u16();
         let adapter = buf.get_u8();
-        let account = get_char_array(buf, 16)?;
-        let account_group = get_char_array(buf, 16)?;
-        let cl_ord_id = get_char_array(buf, 16)?;
-        let security_id = get_char_array(buf, 12)?;
+        let account = get_fixed_string_field(buf, 16, b' ', false)?;
+        let account_group = get_fixed_string_field(buf, 16, b' ', false)?;
+        let cl_ord_id = get_fixed_string_field(buf, 16, b' ', false)?;
+        let security_id = get_fixed_string_field(buf, 12, b' ', false)?;
         let market = buf.get_u8();
         let side = buf.get_u8();
         let price = buf.get_i64();
         let order_qty = buf.get_i64();
         let ord_type = buf.get_u8();
         let time_in_force = buf.get_u8();
-        let pbu = get_char_array(buf, 8)?;
+        let pbu = get_fixed_string_field(buf, 8, b' ', false)?;
         let transact_time = buf.get_u64();
         let ts_recv_ns = buf.get_u64();
         let raw_ref = buf.get_u64();
@@ -95,17 +144,17 @@ mod new_order_req_tests {
             req_id: 123456789,
             channel_id: 1234,
             adapter: 42,
-            account: vec!['a'; 16].into_iter().collect::<String>(),
-            account_group: vec!['a'; 16].into_iter().collect::<String>(),
-            cl_ord_id: vec!['a'; 16].into_iter().collect::<String>(),
-            security_id: vec!['a'; 12].into_iter().collect::<String>(),
+            account: "a".repeat(16),
+            account_group: "a".repeat(16),
+            cl_ord_id: "a".repeat(16),
+            security_id: "a".repeat(12),
             market: 42,
             side: 42,
             price: -123456789,
             order_qty: -123456789,
             ord_type: 42,
             time_in_force: 42,
-            pbu: vec!['a'; 8].into_iter().collect::<String>(),
+            pbu: "a".repeat(8),
             transact_time: 123456789,
             ts_recv_ns: 123456789,
             raw_ref: 123456789,

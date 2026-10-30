@@ -2,6 +2,53 @@
 use binary_codec::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
+#[inline]
+fn put_fixed_string_field(
+    buf: &mut BytesMut,
+    value: &str,
+    fixed_length: usize,
+    pad_byte: u8,
+    pad_left: bool,
+) {
+    let bytes = value.as_bytes();
+    let len = bytes.len().min(fixed_length);
+    let padding_len = fixed_length - len;
+    if pad_left {
+        buf.put_bytes(pad_byte, padding_len);
+    }
+    buf.extend_from_slice(&bytes[..len]);
+    if !pad_left {
+        buf.put_bytes(pad_byte, padding_len);
+    }
+}
+
+#[inline]
+fn get_fixed_string_field(
+    buf: &mut Bytes,
+    fixed_length: usize,
+    pad_byte: u8,
+    pad_left: bool,
+) -> Option<String> {
+    if buf.remaining() < fixed_length {
+        return None;
+    }
+    let bytes = buf.copy_to_bytes(fixed_length);
+    let (start, end) = if pad_left {
+        let start = bytes
+            .iter()
+            .position(|&byte| byte != pad_byte)
+            .unwrap_or(fixed_length);
+        (start, fixed_length)
+    } else {
+        let end = bytes
+            .iter()
+            .rposition(|&byte| byte != pad_byte)
+            .map_or(0, |index| index + 1);
+        (0, end)
+    };
+    String::from_utf8(bytes.slice(start..end).to_vec()).ok()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Instruction {
     pub instr_id: u64,
@@ -14,23 +61,25 @@ pub struct Instruction {
 }
 
 impl BinaryCodec for Instruction {
+    #[inline]
     fn encode(&self, buf: &mut BytesMut) {
         buf.put_u64(self.instr_id);
         buf.put_u16(self.instr_type);
         buf.put_u8(self.target_type);
-        put_char_array(buf, &self.target, 32);
+        put_fixed_string_field(buf, &self.target, 32, b' ', false);
         buf.put_u64(self.expiry_ns);
-        put_char_array(buf, &self.operator, 16);
+        put_fixed_string_field(buf, &self.operator, 16, b' ', false);
         buf.put_u64(self.ts_ns);
     }
 
+    #[inline]
     fn decode(buf: &mut Bytes) -> Option<Instruction> {
         let instr_id = buf.get_u64();
         let instr_type = buf.get_u16();
         let target_type = buf.get_u8();
-        let target = get_char_array(buf, 32)?;
+        let target = get_fixed_string_field(buf, 32, b' ', false)?;
         let expiry_ns = buf.get_u64();
-        let operator = get_char_array(buf, 16)?;
+        let operator = get_fixed_string_field(buf, 16, b' ', false)?;
         let ts_ns = buf.get_u64();
         Some(Self {
             instr_id,
@@ -55,9 +104,9 @@ mod instruction_tests {
             instr_id: 123456789,
             instr_type: 1234,
             target_type: 42,
-            target: vec!['a'; 32].into_iter().collect::<String>(),
+            target: "a".repeat(32),
             expiry_ns: 123456789,
-            operator: vec!['a'; 16].into_iter().collect::<String>(),
+            operator: "a".repeat(16),
             ts_ns: 123456789,
         };
 

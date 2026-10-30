@@ -2,6 +2,53 @@
 use binary_codec::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
+#[inline]
+fn put_fixed_string_field(
+    buf: &mut BytesMut,
+    value: &str,
+    fixed_length: usize,
+    pad_byte: u8,
+    pad_left: bool,
+) {
+    let bytes = value.as_bytes();
+    let len = bytes.len().min(fixed_length);
+    let padding_len = fixed_length - len;
+    if pad_left {
+        buf.put_bytes(pad_byte, padding_len);
+    }
+    buf.extend_from_slice(&bytes[..len]);
+    if !pad_left {
+        buf.put_bytes(pad_byte, padding_len);
+    }
+}
+
+#[inline]
+fn get_fixed_string_field(
+    buf: &mut Bytes,
+    fixed_length: usize,
+    pad_byte: u8,
+    pad_left: bool,
+) -> Option<String> {
+    if buf.remaining() < fixed_length {
+        return None;
+    }
+    let bytes = buf.copy_to_bytes(fixed_length);
+    let (start, end) = if pad_left {
+        let start = bytes
+            .iter()
+            .position(|&byte| byte != pad_byte)
+            .unwrap_or(fixed_length);
+        (start, fixed_length)
+    } else {
+        let end = bytes
+            .iter()
+            .rposition(|&byte| byte != pad_byte)
+            .map_or(0, |index| index + 1);
+        (0, end)
+    };
+    String::from_utf8(bytes.slice(start..end).to_vec()).ok()
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RiskResult {
     pub req_id: u64,
@@ -14,6 +61,7 @@ pub struct RiskResult {
 }
 
 impl BinaryCodec for RiskResult {
+    #[inline]
     fn encode(&self, buf: &mut BytesMut) {
         buf.put_u64(self.req_id);
         buf.put_u8(self.decision);
@@ -21,9 +69,10 @@ impl BinaryCodec for RiskResult {
         buf.put_u16(self.rule_id);
         buf.put_u64(self.ts_recv_ns);
         buf.put_u64(self.ts_engine_ns);
-        put_char_array(buf, &self.text, 48);
+        put_fixed_string_field(buf, &self.text, 48, b' ', false);
     }
 
+    #[inline]
     fn decode(buf: &mut Bytes) -> Option<RiskResult> {
         let req_id = buf.get_u64();
         let decision = buf.get_u8();
@@ -31,7 +80,7 @@ impl BinaryCodec for RiskResult {
         let rule_id = buf.get_u16();
         let ts_recv_ns = buf.get_u64();
         let ts_engine_ns = buf.get_u64();
-        let text = get_char_array(buf, 48)?;
+        let text = get_fixed_string_field(buf, 48, b' ', false)?;
         Some(Self {
             req_id,
             decision,
@@ -58,7 +107,7 @@ mod risk_result_tests {
             rule_id: 1234,
             ts_recv_ns: 123456789,
             ts_engine_ns: 123456789,
-            text: vec!['a'; 48].into_iter().collect::<String>(),
+            text: "a".repeat(48),
         };
 
         let mut buf = BytesMut::new();
