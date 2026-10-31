@@ -3,6 +3,7 @@ use binary_codec::*;
 use byteorder::*;
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 
+use crate::borrowed_reader::BorrowedReader;
 use crate::cancel_reject::*;
 use crate::cancel_req::*;
 use crate::instr_ack::*;
@@ -103,9 +104,75 @@ impl BinaryCodec for RbpBinary {
     }
 }
 
+impl RbpBinary {
+    /// Decodes into an existing value, reusing owned string capacity.
+    ///
+    /// If decoding fails, `out` may have been partially updated. Only use it
+    /// after this method returns `Some(())`.
+    #[inline]
+    pub fn decode_into(buf: &mut Bytes, out: &mut Self) -> Option<()> {
+        out.msg_type = buf.get_u32();
+        out.version = buf.get_u16();
+        out.flags = buf.get_u16();
+        out.msg_seq = buf.get_u64();
+        out.ts_ns = buf.get_u64();
+        out.body_len = buf.get_u32();
+        out.checksum = buf.get_u32();
+        match out.msg_type {
+            16 => match &mut out.body {
+                RbpBinaryBodyEnum::NewOrderReq(value) => NewOrderReq::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::NewOrderReq(NewOrderReq::decode(buf)?),
+            },
+            17 => match &mut out.body {
+                RbpBinaryBodyEnum::CancelReq(value) => CancelReq::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::CancelReq(CancelReq::decode(buf)?),
+            },
+            18 => match &mut out.body {
+                RbpBinaryBodyEnum::OrderConfirm(value) => OrderConfirm::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::OrderConfirm(OrderConfirm::decode(buf)?),
+            },
+            19 => match &mut out.body {
+                RbpBinaryBodyEnum::TradeReport(value) => TradeReport::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::TradeReport(TradeReport::decode(buf)?),
+            },
+            20 => match &mut out.body {
+                RbpBinaryBodyEnum::CancelReject(value) => CancelReject::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::CancelReject(CancelReject::decode(buf)?),
+            },
+            21 => match &mut out.body {
+                RbpBinaryBodyEnum::OrderReject(value) => OrderReject::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::OrderReject(OrderReject::decode(buf)?),
+            },
+            32 => match &mut out.body {
+                RbpBinaryBodyEnum::RiskResult(value) => RiskResult::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::RiskResult(RiskResult::decode(buf)?),
+            },
+            48 => match &mut out.body {
+                RbpBinaryBodyEnum::Instruction(value) => Instruction::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::Instruction(Instruction::decode(buf)?),
+            },
+            49 => match &mut out.body {
+                RbpBinaryBodyEnum::InstrAck(value) => InstrAck::decode_into(buf, value)?,
+                slot => *slot = RbpBinaryBodyEnum::InstrAck(InstrAck::decode(buf)?),
+            },
+            _ => return None,
+        }
+        Some(())
+    }
+}
+
 #[cfg(test)]
 mod rbp_binary_tests {
     use super::*;
+    use crate::cancel_reject::*;
+    use crate::cancel_req::*;
+    use crate::instr_ack::*;
+    use crate::instruction::*;
+    use crate::new_order_req::*;
+    use crate::order_confirm::*;
+    use crate::order_reject::*;
+    use crate::risk_result::*;
+    use crate::trade_report::*;
     use bytes::BytesMut;
 
     #[test]
@@ -141,10 +208,84 @@ mod rbp_binary_tests {
 
         let mut buf = BytesMut::new();
         original.encode(&mut buf);
-        let mut bytes = buf.freeze();
+        let bytes = buf.freeze();
+        assert!(RbpBinaryRef::from_slice(&bytes).is_some());
+        let mut reuse_bytes = bytes.clone();
+        let mut reused = original.clone();
+        RbpBinary::decode_into(&mut reuse_bytes, &mut reused).unwrap();
+        let mut bytes = bytes;
 
         let decoded = RbpBinary::decode(&mut bytes).unwrap();
         original.body_len = decoded.body_len;
         assert_eq!(original, decoded);
+        assert_eq!(original, reused);
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RbpBinaryBodyRefEnum<'a> {
+    NewOrderReq(NewOrderReqRef<'a>),
+    CancelReq(CancelReqRef<'a>),
+    OrderConfirm(OrderConfirmRef<'a>),
+    TradeReport(TradeReportRef<'a>),
+    CancelReject(CancelRejectRef<'a>),
+    OrderReject(OrderRejectRef<'a>),
+    RiskResult(RiskResultRef<'a>),
+    Instruction(InstructionRef<'a>),
+    InstrAck(InstrAckRef<'a>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RbpBinaryRef<'a> {
+    pub msg_type: u32,
+    pub version: u16,
+    pub flags: u16,
+    pub msg_seq: u64,
+    pub ts_ns: u64,
+    pub body_len: u32,
+    pub checksum: u32,
+    pub body: RbpBinaryBodyRefEnum<'a>,
+    _marker: std::marker::PhantomData<&'a ()>,
+}
+
+impl<'a> RbpBinaryRef<'a> {
+    #[inline]
+    pub fn from_slice(input: &'a [u8]) -> Option<Self> {
+        let mut reader = BorrowedReader::new(input);
+        Self::decode_ref(&mut reader)
+    }
+
+    #[inline]
+    pub fn decode_ref(reader: &mut BorrowedReader<'a>) -> Option<Self> {
+        let msg_type = reader.get_u32()?;
+        let version = reader.get_u16()?;
+        let flags = reader.get_u16()?;
+        let msg_seq = reader.get_u64()?;
+        let ts_ns = reader.get_u64()?;
+        let body_len = reader.get_u32()?;
+        let checksum = reader.get_u32()?;
+        let body = match msg_type {
+            16 => RbpBinaryBodyRefEnum::NewOrderReq(NewOrderReqRef::decode_ref(reader)?),
+            17 => RbpBinaryBodyRefEnum::CancelReq(CancelReqRef::decode_ref(reader)?),
+            18 => RbpBinaryBodyRefEnum::OrderConfirm(OrderConfirmRef::decode_ref(reader)?),
+            19 => RbpBinaryBodyRefEnum::TradeReport(TradeReportRef::decode_ref(reader)?),
+            20 => RbpBinaryBodyRefEnum::CancelReject(CancelRejectRef::decode_ref(reader)?),
+            21 => RbpBinaryBodyRefEnum::OrderReject(OrderRejectRef::decode_ref(reader)?),
+            32 => RbpBinaryBodyRefEnum::RiskResult(RiskResultRef::decode_ref(reader)?),
+            48 => RbpBinaryBodyRefEnum::Instruction(InstructionRef::decode_ref(reader)?),
+            49 => RbpBinaryBodyRefEnum::InstrAck(InstrAckRef::decode_ref(reader)?),
+            _ => return None,
+        };
+        Some(Self {
+            msg_type,
+            version,
+            flags,
+            msg_seq,
+            ts_ns,
+            body_len,
+            checksum,
+            body,
+            _marker: std::marker::PhantomData,
+        })
     }
 }
